@@ -1,7 +1,8 @@
 import numpy as np
 import scipy.misc
 import cv2
-
+import scipy.ndimage
+import scipy.misc
 
 def get_images(filename, is_crop, fine_size, images_norm):
     img = cv2.imread(filename)
@@ -41,21 +42,26 @@ def save_images(images, size, filename, images_norm):
             img_out = np.concatenate((img_out, img_samples), axis=0)
     if images_norm is True:
         img_out = img_out * 127.5 + 127.5
-    return cv2.imwrite(filename, img_out)
+    cv2.imwrite(filename, img_out)
+    return img_out
 
 
-def blur_images(image, images_norm, output_size):
-    input_ = cv2.GaussianBlur(image, (7, 7), 0.9)
+def blur_images(image, images_norm, output_size,scale):
+    #img_blur = cv2.GaussianBlur(image, (7, 7), 0.9)
+    img_blur = scipy.misc.imresize(image,(int(image.shape[0]/scale),int(image.shape[1]/scale)),interp='bicubic',mode=None)
+    img_blur = scipy.misc.imresize(img_blur, (int(image.shape[0]), int(image.shape[1])), interp='bicubic',mode=None)
     image_ = image
     if images_norm:
-        input_ = (input_-127.5)/127.5
-        image_ = (image-127.5)/127.5
-    padding = int(input_.shape[0] - output_size)//2
+        img_blur = (img_blur-127.5)/127.5
+        image_ = (image_-127.5)/127.5
+    padding = int(img_blur.shape[0] - output_size)//2
     image_ = image_[padding:padding+output_size, padding:padding+output_size, :]
-    return input_, image_
+    #print("blur {}".format(img_blur.shape))
+    #print("image {}".format(image_.shape))
+    return img_blur, image_
 
 
-def get_sample_image(filename, input_size, output_size, images_norm):
+def get_sample_image(filename, input_size, output_size, images_norm,scale):
     assert input_size >= output_size
     image = cv2.imread(filename)
     size = image.shape
@@ -64,8 +70,11 @@ def get_sample_image(filename, input_size, output_size, images_norm):
     w = (size[1] - input_size + 1) // stride + 1
     padding = int(input_size - output_size)//2
     # input_, sample_ = blur_images(img, images_norm, output_size)
+    input_= scipy.misc.imresize(image, (int(image.shape[0] / scale), int(image.shape[1] / scale)), interp='bicubic',
+                                   mode=None)
+    input_ = scipy.misc.imresize(input_, (int(image.shape[0]), int(image.shape[1])), interp='bicubic', mode=None)
 
-    input_ = cv2.GaussianBlur(image, (7, 7), 0.9)
+    #input_ = cv2.GaussianBlur(image, (7, 7), 0.9)
     sample_ = image
     if images_norm:
         input_ = (input_-127.5)/127.5

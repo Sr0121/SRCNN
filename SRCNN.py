@@ -6,6 +6,7 @@ import os
 from glob import glob
 from ops import *
 from utils import *
+import h5py
 
 
 class SRCNN:
@@ -86,7 +87,9 @@ class SRCNN:
             tf.global_variables_initializer().run()
         except:
             tf.initialize_all_variables().run()
-
+        times = []
+        epochs = []
+        psnrs = []
         # data/train/*.*
         data = glob(os.path.join(self.config.dataset_dir, 'train', self.config.train_set, '*.*'))
 
@@ -98,11 +101,13 @@ class SRCNN:
             print('[***] fail to load model')
             counter = 1
 
-        start_time = time.time()
-        last_ave_loss = None
-        loss_dic = None
+
+        # last_ave_loss = None
+        # loss_dic = None
 
         for epoch in range(self.config.epoches):
+            start_time = time.time()
+            end_time = time.time()
             np.random.shuffle(data)
 
             for file_name in data:
@@ -111,17 +116,20 @@ class SRCNN:
                 images = images[:images.shape[0]//8 * 8, :, :, :]
                 batches = images.reshape([-1, self.batch_size, self.input_size, self.input_size, 3])
 
-                if last_ave_loss is not None and loss_dic[str(file_name)] > last_ave_loss:
-                    batches = batches[
-                        np.random.choice(range(batches.shape[0]),
-                                         np.random.randint(batches.shape[0]//8, batches.shape[0]//4))]
-                else:
-                    batches = batches[
-                        np.random.choice(range(batches.shape[0]),
-                                         np.random.randint(batches.shape[0]//8))]
+                # if last_ave_loss is not None and loss_dic[str(file_name)] > last_ave_loss:
+                #     batches = batches[
+                #         np.random.choice(range(batches.shape[0]),
+                #                          np.random.randint(batches.shape[0]//8, batches.shape[0]//4))]
+                # else:
+                #     batches = batches[
+                #         np.random.choice(range(batches.shape[0]),
+                #                          np.random.randint(batches.shape[0]//8))]
+                batches = batches[
+                    np.random.choice(range(batches.shape[0]),
+                                        np.random.randint(batches.shape[0]//8))]
 
                 for batch_x in batches:
-                    batch_x = [blur_images(imgs, self.images_norm, self.output_size) for imgs in batch_x]
+                    batch_x = [blur_images(imgs, self.images_norm, self.output_size,self.config.scale) for imgs in batch_x]
                     batch_x_input = [input_x[0] for input_x in batch_x]
                     batch_x_sample = [sample_x[1] for sample_x in batch_x]
                     batch_x_input = np.array(batch_x_input).astype(np.float32)
@@ -130,23 +138,41 @@ class SRCNN:
                     _, content_loss, psnr = self.sess.run([self.g_optim, self.g_loss, self.psnr],
                                                           feed_dict={self.input_target: batch_x_sample,
                                                                      self.input_source: batch_x_input})
-                    end_time = time.time()
+
+                    self.save_model(self.config.checkpoint_dir, counter)
 
                     if np.mod(counter, 500) == 0:
                         self.save_model(self.config.checkpoint_dir, counter)
+
                     counter = counter + 1
 
-                loss_dic, last_ave_loss = self.calculate_loss(epoch)
+                # loss_dic, last_ave_loss = self.calculate_loss(epoch)
 
             print('---------------------------------------')
 
             print('epoch{}:total_time:{:.4f},content_loss:{:4f},psnr:{:.4f}'.format(epoch,
                                                                                     end_time - start_time,
                                                                                     content_loss, psnr))
-            loss_dic, last_ave_loss = self.calculate_loss(epoch)
             self.sample(epoch)
+            end_time = time.time()
+            print(end_time - start_time)
+            times.append(end_time-start_time)
+            epochs.append(epoch)
+            psnrs.append(psnr)
+            # loss_dic, last_ave_loss = self.calculate_loss(epoch)
+
+            if epoch % 1 == 0 and epoch != 0:
+                self.write_data(times,epochs,psnrs,epoch)
 
             print('---------------------------------------')
+
+    def write_data(self,times,epochs,psnrs,epoch):
+        savepath = os.path.join(os.getcwd(), 'checkpoint\\train{}.h5'.format(epoch))
+        with h5py.File(savepath, 'w') as hf:
+            hf.create_dataset('times', data=times)
+            hf.create_dataset('epochs', data=epochs)
+            hf.create_dataset('psnrs', data=psnrs)
+        print("finish write")
 
 
     def calculate_loss(self, epoch):
@@ -174,18 +200,26 @@ class SRCNN:
         files = glob(os.path.join(self.config.dataset_dir, 'val', self.config.val_set, '*.*'))
         # for file in files:
         file = files[0]
-        h_, w_, input_, sample_ = get_sample_image(file, self.input_size, self.output_size, self.images_norm)
+        h_, w_, input_, sample_ = get_sample_image(file, self.input_size, self.output_size, self.images_norm,self.config.scale)
+        origin_ = sample_
         sample_images, psnr, input_source = self.sess.run([self.fake, self.psnr, self.input_source],
                                                           feed_dict={self.input_target:sample_, self.input_source:input_})
 
-        save_images(sample_images, [h_,w_], './{}/{}_sample_{}.png'.format(self.config.sample_dir, self.config.val_set,epoch),
+        sample_ = save_images(sample_images, [h_,w_], './{}/{}_sample_{}.png'.format(self.config.sample_dir, self.config.val_set,epoch),
                     self.images_norm)
-        save_images(input_source, [h_,w_], './{}/{}_input_{}.png'.format(self.config.sample_dir, self.config.val_set,epoch),
+        source_ = save_images(input_source, [h_,w_], './{}/{}_input_{}.png'.format(self.config.sample_dir, self.config.val_set,epoch),
                     self.images_norm)
+        origin_ = save_images(origin_, [h_,w_], './{}/{}_origin_{}.png'.format(self.config.sample_dir, self.config.val_set,epoch),
+                    self.images_norm)
+        psnr = self.PSNR_whole(sample_,origin_) - self.PSNR_whole(source_,origin_)
+        print('epoch{}:the whole psnr is :{:.4f}'.format(epoch, psnr))
+        return psnr
 
-        print('epoch{}:psnr:{:.4f}'.format(epoch, psnr))
+    def PSNR_whole(self, real,fake):
+        mse = np.mean(np.square(127.5 * (real - fake) + 127.5), axis=(-3, -2, -1))
+        psnr = np.mean(10 * (np.log(255 * 255 / np.sqrt(mse)) / np.log(10)))
+        return psnr
 
-    
     def test(self):
         print('testing')
         bool_check, _ = self.load_model(self.config.checkpoint_dir, is_test=True)
@@ -198,7 +232,7 @@ class SRCNN:
         file = glob(os.path.join(self.config.dataset_dir, 'test', self.config.test_set, file_name))
         file = file[0]
         # for file in files:
-        h_, w_, input_, sample_ = get_sample_image(file, self.input_size, self.output_size, self.images_norm)
+        h_, w_, input_, sample_ = get_sample_image(file, self.input_size, self.output_size, self.images_norm, self.config.scale)
 
         sample_images, psnr, input_source = self.sess.run([self.fake, self.psnr, self.input_source],
                                                           feed_dict={self.input_target:sample_, self.input_source:input_})
@@ -242,10 +276,13 @@ class SRCNN:
 
         else:
             ckpt_name = self.config.load_model
-            self.saver.restore(self.sess, os.path.join(checkpoint_dir, ckpt_name))
-            print(" [*] Success to read {}".format(ckpt_name))
+            try:
+                self.saver.restore(self.sess, os.path.join(checkpoint_dir, ckpt_name))
+                print(" [*] Success to read {}".format(ckpt_name))
+            except:
+                print(" [*] Failed to find a checkpoint")
+                assert 0
             return True, 0
-
 
 
 if __name__=='__main__':
