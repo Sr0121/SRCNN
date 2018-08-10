@@ -76,12 +76,12 @@ class SRCNN:
         print('d_optim')
 
         self.saver = tf.train.Saver()
-        print('builded model...') 
+        print('builded model...')
 
     def inference_loss(self, real, fake):
         loss = tf.sqrt(tf.reduce_mean(tf.square(real - fake)))
         return loss
-        
+
     def train(self):
         try:
             tf.global_variables_initializer().run()
@@ -111,10 +111,14 @@ class SRCNN:
             np.random.shuffle(data)
 
             for file_name in data:
-                sav_images = get_images(file_name, self.config.is_crop, self.config.fine_size, images_norm=False)
-                images = np.asarray(sav_images)
-                images = images[:images.shape[0]//8 * 8, :, :, :]
-                batches = images.reshape([-1, self.batch_size, self.input_size, self.input_size, 3])
+                images, images_blur = get_images(file_name, self.config.fine_size, True, self.config.scale)
+                images = np.asarray(images)
+                images_blur = np.asarray(images_blur)
+                images = images[:images.shape[0] // 8 * 8, :, :, :]
+                images_blur = images_blur[:images_blur.shape[0] // 8 * 8, :, :, :]
+
+                batches_ori = images.reshape([-1, self.batch_size, self.input_size, self.input_size, 3])
+                batches_blur = images_blur.reshape([-1, self.batch_size, self.input_size, self.input_size, 3])
 
                 # if last_ave_loss is not None and loss_dic[str(file_name)] > last_ave_loss:
                 #     batches = batches[
@@ -124,22 +128,23 @@ class SRCNN:
                 #     batches = batches[
                 #         np.random.choice(range(batches.shape[0]),
                 #                          np.random.randint(batches.shape[0]//8))]
-                batches = batches[
-                    np.random.choice(range(batches.shape[0]),
-                                        np.random.randint(batches.shape[0]//8))]
 
-                for batch_x in batches:
-                    batch_x = [blur_images(imgs, self.images_norm, self.output_size,self.config.scale) for imgs in batch_x]
-                    batch_x_input = [input_x[0] for input_x in batch_x]
-                    batch_x_sample = [sample_x[1] for sample_x in batch_x]
-                    batch_x_input = np.array(batch_x_input).astype(np.float32)
-                    batch_x_sample = np.array(batch_x_sample).astype(np.float32)
+                # batches = batches[np.random.choice(range(batches.shape[0]),np.random.randint(batches.shape[0]//8))]
+
+                rand_index = np.random.choice(range(batches_ori.shape[0]),np.random.randint(batches_ori.shape[0]//8))
+
+                for index in rand_index:
+                    # batch_x = [blur_images(imgs, self.images_norm, self.output_size,self.config.scale) for imgs in batch_x]
+                    input_batch = batches_blur[index]
+                    target_batch = batches_ori[index]
+                    input_batch = np.array(input_batch).astype(np.float32)
+                    target_batch = np.array(target_batch).astype(np.float32)
 
                     _, content_loss, psnr = self.sess.run([self.g_optim, self.g_loss, self.psnr],
-                                                          feed_dict={self.input_target: batch_x_sample,
-                                                                     self.input_source: batch_x_input})
+                                                          feed_dict={self.input_target: target_batch,
+                                                                     self.input_source: input_batch})
 
-                    self.save_model(self.config.checkpoint_dir, counter)
+                   # self.save_model(self.config.checkpoint_dir, counter)
 
                     if np.mod(counter, 500) == 0:
                         self.save_model(self.config.checkpoint_dir, counter)
@@ -161,13 +166,13 @@ class SRCNN:
             psnrs.append(psnr)
             # loss_dic, last_ave_loss = self.calculate_loss(epoch)
 
-            if epoch % 1 == 0 and epoch != 0:
+            if epoch % 20 == 0 and epoch != 0:
                 self.write_data(times,epochs,psnrs,epoch)
 
             print('---------------------------------------')
 
     def write_data(self,times,epochs,psnrs,epoch):
-        savepath = os.path.join(os.getcwd(), 'checkpoint\\train{}.h5'.format(epoch))
+        savepath = os.path.join(os.getcwd(), 'checkpoint','train{}.h5'.format(epoch))
         with h5py.File(savepath, 'w') as hf:
             hf.create_dataset('times', data=times)
             hf.create_dataset('epochs', data=epochs)
@@ -211,12 +216,17 @@ class SRCNN:
                     self.images_norm)
         origin_ = save_images(origin_, [h_,w_], './{}/{}_origin_{}.png'.format(self.config.sample_dir, self.config.val_set,epoch),
                     self.images_norm)
-        psnr = self.PSNR_whole(sample_,origin_) - self.PSNR_whole(source_,origin_)
-        print('epoch{}:the whole psnr is :{:.4f}'.format(epoch, psnr))
-        return psnr
+        sample_ = (sample_ - 127.5 )/ 127.5
+        source_ = (source_ - 127.5) / 127.5
+        origin_ = (origin_ - 127.5 )/ 127.5
+        psnr1 = self.PSNR_whole(sample_, origin_)
+        psnr2 = self.PSNR_whole(source_, origin_)
+        print("the source psnr is {}, the sample psnr is {}".format(psnr2, psnr1))
+
+        print('epoch{}:the whole psnr is :{:.4f}'.format(epoch, psnr1 - psnr2))
 
     def PSNR_whole(self, real,fake):
-        mse = np.mean(np.square(127.5 * (real - fake) + 127.5), axis=(-3, -2, -1))
+        mse = np.mean(np.square(127.5 * (real - fake)), axis=(-3, -2, -1))
         psnr = np.mean(10 * (np.log(255 * 255 / np.sqrt(mse)) / np.log(10)))
         return psnr
 

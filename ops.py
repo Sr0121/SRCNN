@@ -54,7 +54,7 @@ def leaky_relu(input_x, negative_slop=0.2):
     return tf.maximum(negative_slop*input_x, input_x)
 
 def PSNR(real, fake):
-    mse = tf.reduce_mean(tf.square(127.5*(real-fake)+127.5),axis=(-3,-2,-1))
+    mse = tf.reduce_mean(tf.square(127.5*(real-fake)),axis=(-3,-2,-1))
     psnr = tf.reduce_mean(10 * (tf.log(255*255 / tf.sqrt(mse)) / np.log(10)))
     return psnr
 

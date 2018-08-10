@@ -44,7 +44,6 @@ def main(_):
     with tf.Session(config=config) as sess:
         srcnn = SRCNN(FLAGS, batch_size=8, input_size=33, output_size=33, input_channels=3, sess=sess)
         srcnn.build_model()
-        # srcnn.sample(1, 1)
         if FLAGS.is_training:
             srcnn.train()
         if FLAGS.is_testing:
