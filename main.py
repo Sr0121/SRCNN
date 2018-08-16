@@ -24,6 +24,8 @@ flags.DEFINE_bool('is_training', False, 'training or testing')
 flags.DEFINE_integer('scale',3,'the scale of bicubic')
 flags.DEFINE_string('file_name', None, 'file name')
 flags.DEFINE_string('load_model', 'SRCNN.model-1', 'load model step')
+flags.DEFINE_bool('has_model', False, 'has model to train')
+flags.DEFINE_integer('load_model_counter',0,'load model counter')
 FLAGS = flags.FLAGS
 
 def check_dir():
@@ -44,6 +46,7 @@ def main(_):
     with tf.Session(config=config) as sess:
         srcnn = SRCNN(FLAGS, batch_size=8, input_size=33, output_size=33, input_channels=3, sess=sess)
         srcnn.build_model()
+        # srcnn.sample(1, 1)
         if FLAGS.is_training:
             srcnn.train()
         if FLAGS.is_testing:

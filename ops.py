@@ -1,7 +1,7 @@
 import tensorflow as tf
 import tensorflow.contrib.slim as slim
 import numpy as np
-
+import math
 
 def add_padding(input_x, input_size = 33, kernal_size = 3, stride=1):
     conv_size = input_size * stride + kernal_size - 1
@@ -53,8 +53,8 @@ def down_sample_layer(input_x):
 def leaky_relu(input_x, negative_slop=0.2):
     return tf.maximum(negative_slop*input_x, input_x)
 
-def PSNR(real, fake):
-    mse = tf.reduce_mean(tf.square(127.5*(real-fake)),axis=(-3,-2,-1))
-    psnr = tf.reduce_mean(10 * (tf.log(255*255 / tf.sqrt(mse)) / np.log(10)))
-    return psnr
 
+def PSNR(real, fake):
+    mse = tf.reduce_mean(tf.square(127.5 * (real - fake)), axis=(-3, -2, -1))
+    psnr = tf.reduce_mean(10 * (tf.log(255 * 255 / tf.sqrt(mse)) / np.log(10)))
+    return psnr
